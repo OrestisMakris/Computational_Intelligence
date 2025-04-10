@@ -118,40 +118,49 @@ def compute_mse(outputs, y, device=torch.device("cpu")):
     mse_loss = ((probs - onehot) ** 2).mean().item()
     return mse_loss
 
-def hidden_neuron_experiments(X_scaled, y, device):
+def hyperparameter_experiments(X_scaled, y, device, best_hidden_size):
+    """
+    Run experiments for different combinations of learning rate (η) and momentum (m)
+    using the best topology (best_hidden_size). For each experiment, CV is performed,
+    and convergence plots (CE loss vs. epochs) are saved for fold 1.
+    """
     input_dim = X_scaled.shape[1]
-    # Define hidden sizes with labels modified to avoid '/'
-    hidden_sizes = {
-        "I_half": max(1, int(input_dim / 2)),         # I/2 -> I_half
-        "2I_3": max(1, int(2 * input_dim / 3)),         # 2I/3 -> 2I_3
-        "I": input_dim,
-        "2I": 2 * input_dim
-    }
-    # Dictionary to store average results for each hidden size
+    # Define hyperparameter combinations to test.
+    hyperparams = [
+         {"eta": 0.001, "momentum": 0.2},
+         {"eta": 0.001, "momentum": 0.6},
+         {"eta": 0.05,  "momentum": 0.6},
+         {"eta": 0.1,   "momentum": 0.6}
+    ]
     results = {}
-    epochs = 500
+    epochs = 200  # Adjust the number of epochs as needed
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
-    for label, hidden_size in hidden_sizes.items():
-        print(f"\n--- Testing hidden size: {label} ({hidden_size} neurons) ---")
-        ce_losses_total = []  # average final CE loss per fold (on test set)
-        mse_total = []        # average final MSE per fold
-        acc_total = []        # average accuracy per fold
+    for params in hyperparams:
+        eta = params["eta"]
+        mom = params["momentum"]
+        key = f"eta_{eta}_mom_{mom}"
+        ce_losses_total = []  # for final test CE loss in each fold
+        mse_total = []        # for final MSE in each fold
+        acc_total = []        # for accuracy in each fold
         fold_num = 0
+        
         for train_index, test_index in skf.split(X_scaled, y):
             fold_num += 1
             X_train, X_test = X_scaled[train_index], X_scaled[test_index]
             y_train, y_test = y[train_index], y[test_index]
             
-            # Using ReLU activation for this experiment.
-            model = SimpleNet(input_size=input_dim, hidden_size=hidden_size, activation=nn.ReLU()).to(device)
+            # Construct the model using the best hidden size and ReLU activation.
+            model = SimpleNet(input_size=input_dim, hidden_size=best_hidden_size, activation=nn.ReLU()).to(device)
             criterion = nn.CrossEntropyLoss()
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
+            # Use SGD with the given learning rate and momentum.
+            optimizer = optim.SGD(model.parameters(), lr=eta, momentum=mom)
             
-            # Train and record CE convergence curves.
-            train_losses, val_losses = train(model, optimizer, criterion, X_train, y_train, X_test, y_test, epochs=epochs, device=device)
+            # Train with early stopping (patience=10 epochs)
+            train_losses, val_losses = train(model, optimizer, criterion, X_train, y_train, X_test, y_test,
+                                             epochs=epochs, device=device, patience=10)
             
-            # Evaluate on test set for final epoch
+            # Evaluate final performance on the test fold.
             model.eval()
             with torch.no_grad():
                 outputs = model(X_test.to(device))
@@ -163,25 +172,25 @@ def hidden_neuron_experiments(X_scaled, y, device):
             ce_losses_total.append(final_ce_loss)
             mse_total.append(mse_loss)
             acc_total.append(accuracy)
-
+            
             # For the first fold, export the convergence plots.
             if fold_num == 1:
                 plt.figure()
                 plt.plot(train_losses, label='Training CE Loss')
                 plt.plot(val_losses, label='Validation CE Loss')
-                plt.xlabel('Epoch')
-                plt.ylabel('Loss')
-                plt.title(f'Convergence Plot (Hidden Size: {label})')
+                plt.xlabel('Epochs')
+                plt.ylabel('CE Loss')
+                plt.title(f'Convergence Plot (η={eta}, m={mom})')
                 plt.legend()
-                plt.savefig(f"loss_curves_hidden_{label}.png")
+                plt.savefig(f"loss_curves_eta_{eta}_mom_{mom}.png")
                 plt.close()
-                
-        # Average results over folds
+        
+        # Average the metrics over the folds.
         avg_ce = sum(ce_losses_total) / len(ce_losses_total)
         avg_mse = sum(mse_total) / len(mse_total)
         avg_acc = sum(acc_total) / len(acc_total)
-        results[label] = {"CE Loss": avg_ce, "MSE": avg_mse, "Accuracy": avg_acc}
-        print(f"Results for hidden size {label}: Avg CE Loss: {avg_ce:.4f}, Avg MSE: {avg_mse:.4f}, Avg Accuracy: {avg_acc:.4f}")
+        results[key] = {"CE Loss": avg_ce, "MSE": avg_mse, "Accuracy": avg_acc}
+        print(f"Results for (η={eta}, m={mom}): Avg CE Loss: {avg_ce:.4f}, Avg MSE: {avg_mse:.4f}, Avg Accuracy: {avg_acc:.4f}")
     
     return results
 
@@ -189,26 +198,29 @@ def hidden_neuron_experiments(X_scaled, y, device):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f'Using device: {device}')
-    csv_path = 'alzheimers_disease_data.csv'  # update path if necessary
+    csv_path = 'alzheimers_disease_data.csv'  # update path if needed
     X, y = load_data(csv_path)
 
-    # Export dataset plots (using raw data)
+    # Export basic dataset plots.
     plot_dataset(X, feature_index=0, save_path="dataset_feature_distribution.png")
     plot_class_distribution(y, save_path="class_distribution.png")
     plot_feature_correlation(X, save_path="feature_correlation_heatmap.png")
     
-    # Standardization using z-score
+    # Standardize the features (z-score).
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X.numpy())
     X_scaled = torch.tensor(X_scaled, dtype=torch.float32)
     
-    # Run experiments for different hidden layer sizes.
-    results = hidden_neuron_experiments(X_scaled, y, device)
+    # Choose the best network topology from the previous experiments.
+    # For instance, if the best hidden size was 'I' (i.e., number of input features), then:
+    best_hidden_size = X_scaled.shape[1]
     
-    print("\n--- Summary of Experiments ---")
-    print("Hidden Size | CE Loss   | MSE       | Accuracy")
-    for label, metrics in results.items():
-        print(f"{label:9s} | {metrics['CE Loss']:.4f} | {metrics['MSE']:.4f} | {metrics['Accuracy']:.4f}")
+    # Run hyperparameter experiments on the chosen topology.
+    results_hp = hyperparameter_experiments(X_scaled, y, device, best_hidden_size)
+    
+    print("\n--- Hyperparameter Experiment Results ---")
+    for key, metrics in results_hp.items():
+        print(f"{key}: {metrics}")
 
 if __name__ == '__main__':
     main()

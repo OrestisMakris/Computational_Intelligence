@@ -139,7 +139,7 @@ def main():
             optimizer = optim.Adam(model.parameters(), lr=0.001)
             
             # Train the model and record loss curves; adjust epochs if needed.
-            train_losses, val_losses = train(model, optimizer, criterion, X_train, y_train, X_test, y_test, epochs=250, device=device)
+            train_losses, val_losses = train(model, optimizer, criterion, X_train, y_train, X_test, y_test, epochs=80, device=device)
             acc = evaluate(model, X_test, y_test, device=device)
             accuracies.append(acc)
             print(f'Fold {fold} Accuracy: {acc:.4f}')
