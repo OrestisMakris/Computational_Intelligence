@@ -67,7 +67,7 @@ class SimpleNet(nn.Module):
         out = self.fc2(out)
         return out
 
-def train(model, optimizer, criterion, X_train, y_train, X_val, y_val, epochs=50, device=torch.device("cpu"), patience=10):
+def train(model, optimizer, criterion, X_train, y_train, X_val, y_val, epochs=50, device=torch.device("cpu"), patience=40):
     model.train()
     train_losses = []
     val_losses = []
@@ -133,7 +133,7 @@ def hyperparameter_experiments(X_scaled, y, device, best_hidden_size):
          {"eta": 0.1,   "momentum": 0.6}
     ]
     results = {}
-    epochs = 200  # Adjust the number of epochs as needed
+    epochs = 400  # Adjust the number of epochs as needed
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     for params in hyperparams:
