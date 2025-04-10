@@ -53,27 +53,31 @@ def plot_feature_correlation(X, save_path="feature_correlation_heatmap.png"):
     plt.savefig(save_path)
     plt.close()
 
-# DeepNet: supports multiple hidden layers via a list of hidden sizes.
+# Updated DeepNet: includes BatchNorm and Dropout to help generalization.
 class DeepNet(nn.Module):
-    def __init__(self, input_size, hidden_sizes, output_size=2, activation=nn.ReLU()):
+    def __init__(self, input_size, hidden_sizes, output_size=2, activation=nn.ReLU(), dropout_prob=0.2):
         """
         hidden_sizes: list of integers, one per hidden layer.
+        dropout_prob: dropout probability to reduce overfitting.
         """
         super(DeepNet, self).__init__()
         layers = []
         in_dim = input_size
         for h in hidden_sizes:
             layers.append(nn.Linear(in_dim, h))
+            layers.append(nn.BatchNorm1d(h))
             layers.append(activation)
+            layers.append(nn.Dropout(dropout_prob))
             in_dim = h
-        # Output layer, no activation as CrossEntropyLoss expects logits.
+        # Output layer (no activation because CrossEntropyLoss expects logits)
         layers.append(nn.Linear(in_dim, output_size))
         self.model = nn.Sequential(*layers)
     
     def forward(self, x):
         return self.model(x)
 
-def train(model, optimizer, criterion, X_train, y_train, X_val, y_val, epochs=50, device=torch.device("cpu"), patience=10):
+# Updated train function: now includes a learning rate scheduler and increased epochs.
+def train(model, optimizer, scheduler, criterion, X_train, y_train, X_val, y_val, epochs=300, device=torch.device("cpu"), patience=10):
     model.train()
     train_losses = []
     val_losses = []
@@ -93,6 +97,9 @@ def train(model, optimizer, criterion, X_train, y_train, X_val, y_val, epochs=50
             val_loss = criterion(val_outputs, y_val.to(device))
             val_losses.append(val_loss.item())
         model.train()
+        
+        # Step the scheduler using the current validation loss.
+        scheduler.step(val_loss.item())
         
         if val_loss.item() < best_val_loss:
             best_val_loss = val_loss.item()
@@ -121,15 +128,19 @@ def compute_mse(outputs, y, device=torch.device("cpu")):
 
 def deep_net_experiments(X_scaled, y, device):
     input_dim = X_scaled.shape[1]
-    # Example architectures:
+    # Original architectures plus huge ones:
     architectures = {
         "2_layers_constant": [input_dim, input_dim],
-        "2_layers_decreasing": [int(1.5*input_dim), input_dim],
+        "2_layers_decreasing": [int(1.5 * input_dim), input_dim],
         "3_layers_uniform": [input_dim, input_dim, input_dim],
-        "3_layers_decreasing": [int(1.5*input_dim), input_dim, int(0.75*input_dim)]
+        "3_layers_decreasing": [int(1.5 * input_dim), input_dim, int(0.75 * input_dim)],
+        # HUGE architectures:
+        "3_layers_huge": [input_dim * 4, input_dim * 4, input_dim * 4],
+        "4_layers_huge": [input_dim * 4, input_dim * 4, input_dim * 4, input_dim * 4],
+        "5_layers_huge": [input_dim * 4, input_dim * 4, input_dim * 4, input_dim * 4, input_dim * 4]
     }
     results = {}
-    epochs = 250
+    epochs = 300
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     for arch_label, hidden_sizes in architectures.items():
@@ -144,11 +155,15 @@ def deep_net_experiments(X_scaled, y, device):
             X_train, X_test = X_scaled[train_index], X_scaled[test_index]
             y_train, y_test = y[train_index], y[test_index]
             
-            model = DeepNet(input_size=input_dim, hidden_sizes=hidden_sizes, activation=nn.ReLU()).to(device)
+            # Create model with dropout and batch normalization.
+            model = DeepNet(input_size=input_dim, hidden_sizes=hidden_sizes, activation=nn.ReLU(), dropout_prob=0.2).to(device)
+            # Use Adam optimizer with weight decay (L2 regularization).
+            optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+            # Scheduler to reduce LR on plateau.
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
             criterion = nn.CrossEntropyLoss()
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
             
-            train_losses, val_losses = train(model, optimizer, criterion, X_train, y_train, X_test, y_test,
+            train_losses, val_losses = train(model, optimizer, scheduler, criterion, X_train, y_train, X_test, y_test,
                                              epochs=epochs, device=device, patience=10)
             model.eval()
             with torch.no_grad():
