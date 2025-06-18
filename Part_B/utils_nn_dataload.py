@@ -13,7 +13,7 @@ This code is part of a project for the course "Computational Inteligence".
 
 import numpy as np
 import pandas as pd
-import torch
+import torch 
 
 import torch.nn  as nn
 import torch.optim as optim
@@ -28,7 +28,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 from sklearn.compose  import ColumnTransformer
 
-
+import copy  
 
 def load_data(csv_path):
     """Load and preprocess the data from a CSV file."""
@@ -100,50 +100,114 @@ class SimpleNet(nn.Module):
         return self.output(x)             # Pass through output layer
 
 
-def train(model, optimizer, criterion, x_train, y_train, x_val, y_val, 
-          epochs=50, device=torch.device("cpu")):
-    """Train the neural network model.
-    
-    Args:
-        model: PyTorch model to train.
-        optimizer: PyTorch optimizer to use.
-        criterion: Loss function.
-        x_train: Training features tensor.
-        y_train: Training labels tensor.
-        x_val: Validation features tensor.
-        y_val: Validation labels tensor.
-        epochs: Number of training epochs. Defaults to 50.
-        device: Device to use for training. Defaults to CPU.
-        
-    Returns:
-        tuple: (train_losses, val_losses, train_accs, val_accs)
-            Lists containing loss and accuracy values for each epoch.
-    """
+
+def train(model, optimizer, criterion, x_train, y_train, x_val, y_val, epochs=50, device=torch.device("cpu"), patience=1, min_delta=1e-2):
+    """Train the model with early stopping."""
+
     model.to(device).train()
     train_losses, val_losses = [], []
+
     train_accs, val_accs = [], []
     
-    for _ in range(epochs):
+    best_val_loss = float('inf')
+
+    epochs_no_improve = 0
+    best_state = None
+
+    for epoch in range(1, epochs+1):
+        # training step
         optimizer.zero_grad()
         out = model(x_train.to(device))
+
         loss = criterion(out, y_train.to(device))
         loss.backward()
         optimizer.step()
         train_losses.append(loss.item())
+        preds = out.argmax(1)
+        train_accs.append((preds == y_train.to(device)).float().mean().item())
 
-        preds = out.argmax(1).cpu()
-        train_accs.append((preds == y_train).float().mean().item())
-
+        # validation step
         model.eval()
         with torch.no_grad():
             val_out = model(x_val.to(device))
-            val_loss = criterion(val_out, y_val.to(device))
-            val_losses.append(val_loss.item())
-            val_preds = val_out.argmax(1).cpu()
-            val_accs.append((val_preds == y_val).float().mean().item())
+
+            val_loss = criterion(val_out, y_val.to(device)).item()
+
+            val_losses.append(val_loss)
+            val_preds = val_out.argmax(1)
+            val_accs.append((val_preds == y_val.to(device)).float().mean().item())
         model.train()
-        
+
+        # early stopping check
+        if val_loss < best_val_loss - min_delta:
+            best_val_loss = val_loss
+            best_state = copy.deepcopy(model.state_dict())
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= patience:
+            print(f"Early stopping at epoch {epoch} (no improvement for {patience} epochs)")
+            break
+
+    # restore best weights
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
     return train_losses, val_losses, train_accs, val_accs
+
+
+
+def plot_mean_loss_curves(mean_train_losses, mean_val_losses, save_path):
+    """Plot average training and validation loss across folds.
+    
+    Args:
+        mean_train_losses: List of mean training losses.
+        mean_val_losses: List of mean validation losses.
+        save_path: Path to save the plot.
+    """
+    sns.set_style("whitegrid")
+    sns.set_context("paper", font_scale=1.3)
+    epochs = range(1, len(mean_train_losses) + 1)
+    
+    plt.figure(figsize=(12, 7))
+    plt.plot(epochs, mean_train_losses, label='Mean Train Loss', color='#4ECDC4')
+    plt.plot(epochs, mean_val_losses, label='Mean Val Loss', color='#FF6B6B')
+    plt.title('Mean Loss Over Epochs (All Folds)', fontsize=18, fontweight='bold', pad=20)
+    plt.xlabel('Epoch', fontweight='bold')
+    plt.ylabel('Loss', fontweight='bold')
+    plt.legend()
+    plt.grid(True, ls='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+def plot_mean_accuracy_curves(mean_train_accs, mean_val_accs, save_path):
+    """Plot average training and validation accuracy across folds.
+    
+    Args:
+        mean_train_accs: List of mean training accuracies.
+        mean_val_accs: List of mean validation accuracies.
+        save_path: Path to save the plot.
+    """
+    sns.set_style("whitegrid")
+    sns.set_context("paper", font_scale=1.3)
+    epochs = range(1, len(mean_train_accs) + 1)
+    
+    plt.figure(figsize=(12, 7))
+    plt.plot(epochs, mean_train_accs, label='Mean Train Acc', color='#4ECDC4')
+    plt.plot(epochs, mean_val_accs, label='Mean Val Acc', color='#FF6B6B')
+    plt.title('Mean Accuracy Over Epochs (All Folds)', fontsize=18, fontweight='bold', pad=20)
+    plt.xlabel('Epoch', fontweight='bold')
+    plt.ylabel('Accuracy', fontweight='bold')
+    plt.legend()
+    plt.grid(True, ls='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+
 
 
 def evaluate(model, x_test, y_test, device=torch.device("cpu")):
