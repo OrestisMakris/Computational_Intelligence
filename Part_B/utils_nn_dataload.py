@@ -1,7 +1,8 @@
 """Module for Alzheimer's disease prediction and analysis using neural networks.
 
-This module contains helper functions for loading data, performing Genetech Algorithm (GA) 
-operations for feature selection,preprocessing it, and evaluating the performance of neural network models.
+this utility module provides functions to load and preprocess data,
+define a simple neural network architecture, and train the model acrh and the eval
+
 Author: Orestis Antonis Makris AM 1084516
 Date: 2025-4-21
 License: MIT
@@ -13,13 +14,21 @@ This code is part of a project for the course "Computational Inteligence".
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
+
+import torch.nn  as nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
+import  matplotlib.pyplot as plt
+
 import seaborn as sns
+
+
 from sklearn.model_selection import StratifiedKFold
+
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
+
+from sklearn.compose  import ColumnTransformer
+
+
 
 def load_data(csv_path):
     """Load and preprocess the data from a CSV file."""
