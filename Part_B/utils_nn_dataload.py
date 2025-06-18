@@ -22,31 +22,33 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 
 def load_data(csv_path):
-    """Load all features from the CSV file without categorization.
-
-    Args:
-        csv_path: String path to the CSV file.
-
-    Returns:
-        tuple: (X, y)
-            X: DataFrame containing all feature columns.
-            y: numpy array of encoded diagnostic labels.
-    """
+    """Load and preprocess the data from a CSV file."""
     df = pd.read_csv(csv_path)
 
-    # Drop unwanted columns
-    for col in ['DoctorInCharge', 'PatientID']:
-        if col in df.columns:
-            df = df.drop(col, axis=1)
-
-    # Label encode the Diagnosis
     label_col = 'Diagnosis'
 
-    # Split X and y
-    X = df.drop(columns=[label_col]).copy()
+    ordinal_cols = ['EducationLevel']
+    nominal_cols = []
+    binary_cols = [
+        'Gender', 'Smoking', 'FamilyHistoryAlzheimers', 'CardiovascularDisease',
+        'Diabetes', 'Depression', 'Hypertension', 'HeadInjury',
+        'MemoryComplaints', 'BehavioralProblems', 'Confusion', 'Disorientation',
+        'PersonalityChanges', 'DifficultyCompletingTasks', 'Forgetfulness'
+    ]
+
+    all_feature_cols = set(df.columns) - {label_col}
+    non_cont_cols = set(ordinal_cols + nominal_cols + binary_cols)
+    continuous_cols = sorted(list(all_feature_cols - non_cont_cols))
+
+    missing = all_feature_cols ^ (non_cont_cols | set(continuous_cols))
+    if missing:
+        raise ValueError(f"Some features not assigned: {missing}")
+
+    X = df[continuous_cols + ordinal_cols + nominal_cols + binary_cols].copy()
     y = df[label_col].values.astype(int)
 
-    return X, y
+    return X, y, continuous_cols, ordinal_cols, nominal_cols, binary_cols
+
 
 
 class SimpleNet(nn.Module):
@@ -138,6 +140,7 @@ def train(model, optimizer, criterion, x_train, y_train, x_val, y_val,
 def evaluate(model, x_test, y_test, device=torch.device("cpu")):
     """Evaluate model performance on test data.
     
+
     Args:
         model: Trained PyTorch model.
         x_test: Test features tensor.
@@ -153,107 +156,3 @@ def evaluate(model, x_test, y_test, device=torch.device("cpu")):
         preds = out.argmax(1).cpu()
     return (preds == y_test).float().mean().item()
 
-
-
-def plot_accuracy_curves(train_acc, val_acc, save_path):
-    """Plot training and validation accuracy over epochs.
-    
-    Args:
-        train_acc: List of training accuracies.
-        val_acc: List of validation accuracies.
-        save_path: Path to save the plot.
-    """
-    sns.set_style("whitegrid")
-    sns.set_context("paper", font_scale=1.3)
-    epochs = range(1, len(train_acc)+1)
-    
-    plt.figure(figsize=(12, 7))
-    plt.plot(epochs, train_acc, label='Train', color='#4ECDC4')
-    plt.plot(epochs, val_acc, label='Val', color='#FF6B6B')
-    plt.title('Accuracy Over Epochs', fontsize=18, fontweight='bold', pad=20)
-    plt.xlabel('Epoch', fontweight='bold')
-    plt.ylabel('Accuracy', fontweight='bold')
-    plt.legend()
-    plt.grid(True, ls='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-
-def plot_fold_accuracies(fold_accs, save_path):
-    """Plot accuracies across cross-validation folds.
-    
-    Args:
-        fold_accs: List of accuracies for each fold.
-        save_path: Path to save the plot.
-    """
-    sns.set_style("whitegrid")
-    sns.set_context("paper", font_scale=1.3)
-    df = pd.DataFrame({
-        'Fold': [f"Fold {i+1}" for i in range(len(fold_accs))],
-        'Accuracy': fold_accs
-    })
-    
-    mean_acc = np.mean(fold_accs)
-    ax = sns.barplot(x='Fold', y='Accuracy', data=df, palette="viridis")
-    
-    for i, acc in enumerate(fold_accs):
-        ax.text(i, acc+0.01, f"{acc:.4f}", ha='center', fontweight='bold')
-        
-    plt.axhline(mean_acc, color='r', ls='--', label=f"Mean {mean_acc:.4f}")
-    plt.title('CV Fold Accuracies', fontsize=18, fontweight='bold', pad=20)
-    plt.ylim(0, 1)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-
-def plot_mean_loss_curves(mean_train_losses, mean_val_losses, save_path):
-    """Plot average training and validation loss across folds.
-    
-    Args:
-        mean_train_losses: List of mean training losses.
-        mean_val_losses: List of mean validation losses.
-        save_path: Path to save the plot.
-    """
-    sns.set_style("whitegrid")
-    sns.set_context("paper", font_scale=1.3)
-    epochs = range(1, len(mean_train_losses) + 1)
-    
-    plt.figure(figsize=(12, 7))
-    plt.plot(epochs, mean_train_losses, label='Mean Train Loss', color='#4ECDC4')
-    plt.plot(epochs, mean_val_losses, label='Mean Val Loss', color='#FF6B6B')
-    plt.title('Mean Loss Over Epochs (All Folds)', fontsize=18, fontweight='bold', pad=20)
-    plt.xlabel('Epoch', fontweight='bold')
-    plt.ylabel('Loss', fontweight='bold')
-    plt.legend()
-    plt.grid(True, ls='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-
-def plot_mean_accuracy_curves(mean_train_accs, mean_val_accs, save_path):
-    """Plot average training and validation accuracy across folds.
-    
-    Args:
-        mean_train_accs: List of mean training accuracies.
-        mean_val_accs: List of mean validation accuracies.
-        save_path: Path to save the plot.
-    """
-    sns.set_style("whitegrid")
-    sns.set_context("paper", font_scale=1.3)
-    epochs = range(1, len(mean_train_accs) + 1)
-    
-    plt.figure(figsize=(12, 7))
-    plt.plot(epochs, mean_train_accs, label='Mean Train Acc', color='#4ECDC4')
-    plt.plot(epochs, mean_val_accs, label='Mean Val Acc', color='#FF6B6B')
-    plt.title('Mean Accuracy Over Epochs (All Folds)', fontsize=18, fontweight='bold', pad=20)
-    plt.xlabel('Epoch', fontweight='bold')
-    plt.ylabel('Accuracy', fontweight='bold')
-    plt.legend()
-    plt.grid(True, ls='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
