@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler,  OneHotEncoder
 from sklearn.compose import ColumnTransformer
 
 from sklearn.model_selection import StratifiedKFold
-from utils_nn_dataload import train, evaluate    
+from utils_nn_dataload import train, evaluate, plot_mean_loss_curves, plot_mean_accuracy_curves
 from configGA import POPULATION_SIZE, NUM_FEATURES,  MAX_GENERATIONS, CROSSOVER_PROB, MUTATION_PROB, TOURNAMENTSIZE, ELITISM, PENALTY_WEIGHT
 
 from ga_utils  import genenetikos_main
@@ -126,7 +126,7 @@ def run_ga():
         print(f"εκπαίδευση {fold+1}...")
 
 
-            train_losses, val_losses, train_accs, val_accs train(
+        train_losses, val_losses, train_accs, val_accs = train(
             model=final_model, 
             optimizer=optimizer, 
             criterion=criterion, 
@@ -161,13 +161,13 @@ def run_ga():
     mn_tr_loss  = np.mean([l[:min_ep_loss] for l in hist_tr_loss], axis=0)
     mn_val_loss = np.mean([l[:min_ep_loss] for l in hist_val_loss], axis=0)
 
-    plot_mean_loss_curves(mn_tr_loss, mn_val_loss, f"loss_{name}.png")
+    plot_mean_loss_curves(mn_tr_loss, mn_val_loss, f"loss_final_model_GA_retraine.png")
 
     min_ep_acc = min(len(a) for a in hist_tr_acc)
     mn_tr_acc   = np.mean([a[:min_ep_acc] for a in hist_tr_acc], axis=0)
     mn_val_acc  = np.mean([a[:min_ep_acc] for a in hist_val_acc], axis=0)
 
-    plot_mean_accuracy_curves(mn_tr_acc, mn_val_acc, f"acc_{name}.png")
+    plot_mean_accuracy_curves(mn_tr_acc, mn_val_acc, f"acc_final_model_GA_retraine.png")
 
 
 
